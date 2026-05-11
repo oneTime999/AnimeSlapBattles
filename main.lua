@@ -8,6 +8,9 @@ local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local SkillEvent = ReplicatedStorage:WaitForChild("SkillEvent")
 
 local enabled = false
+local currentTarget = nil
+local currentHighlight = nil
+local currentNameTag = nil
 
 -- ============================================
 -- GUI MODERNA - CANTO SUPERIOR ESQUERDO
@@ -121,6 +124,69 @@ local function setVisual(state)
 end
 
 -- ============================================
+-- HIGHLIGHT + NOME DO ALVO
+-- ============================================
+local function clearTarget()
+	if currentHighlight and currentHighlight.Parent then
+		currentHighlight:Destroy()
+	end
+	if currentNameTag and currentNameTag.Parent then
+		currentNameTag:Destroy()
+	end
+	currentHighlight = nil
+	currentNameTag = nil
+	currentTarget = nil
+end
+
+local function setTarget(player)
+	if player == currentTarget then return end
+
+	clearTarget()
+	if not player then return end
+
+	local char = player.Character
+	if not char then return end
+
+	-- Highlight vermelho no personagem
+	local highlight = Instance.new("Highlight")
+	highlight.Name = "TargetHL"
+	highlight.FillColor = Color3.fromRGB(255, 0, 0)
+	highlight.OutlineColor = Color3.fromRGB(255, 80, 80)
+	highlight.FillTransparency = 0.7
+	highlight.OutlineTransparency = 0
+	highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+	highlight.Parent = char
+
+	-- Nome flutuando na cabeça
+	local head = char:FindFirstChild("Head")
+	if head then
+		local billboard = Instance.new("BillboardGui")
+		billboard.Name = "TargetName"
+		billboard.Size = UDim2.new(0, 120, 0, 30)
+		billboard.StudsOffset = Vector3.new(0, 2.8, 0)
+		billboard.AlwaysOnTop = true
+		billboard.MaxDistance = 500
+		billboard.Parent = head
+
+		local nameLabel = Instance.new("TextLabel")
+		nameLabel.Size = UDim2.fromScale(1, 1)
+		nameLabel.BackgroundTransparency = 1
+		nameLabel.Text = player.Name
+		nameLabel.TextColor3 = Color3.fromRGB(255, 60, 60)
+		nameLabel.TextStrokeTransparency = 0.3
+		nameLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+		nameLabel.Font = Enum.Font.GothamBold
+		nameLabel.TextSize = 16
+		nameLabel.Parent = billboard
+
+		currentNameTag = billboard
+	end
+
+	currentHighlight = highlight
+	currentTarget = player
+end
+
+-- ============================================
 -- DRAG (Mobile + PC) — 100% funcional
 -- ============================================
 local dragging = false
@@ -182,6 +248,9 @@ end)
 local function toggle()
 	if wasDragged then return end
 	setVisual(not enabled)
+	if not enabled then
+		clearTarget()
+	end
 end
 
 Button.Activated:Connect(toggle)
@@ -222,11 +291,23 @@ task.spawn(function()
 	while true do
 		task.wait(0.1)
 		
-		if not enabled then continue end
+		if not enabled then
+			clearTarget()
+			continue
+		end
 
 		local nearestPlayer = getNearestPlayer()
+		setTarget(nearestPlayer)
+
 		if nearestPlayer then
 			SkillEvent:FireServer("Makima", nearestPlayer)
 		end
 	end
+end)
+
+-- Limpa tudo se morrer
+LocalPlayer.CharacterRemoving:Connect(function()
+	clearTarget()
+	enabled = false
+	setVisual(false)
 end)
