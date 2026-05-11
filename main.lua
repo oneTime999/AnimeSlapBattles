@@ -7,99 +7,144 @@ local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local SkillEvent = ReplicatedStorage:WaitForChild("SkillEvent")
 
-local CONFIG = {
-	SKILL_NAME = "Makima",
-	LOOP_INTERVAL = 0.2,
-	TWEEN_TIME = 0.25,
-	DRAG_THRESHOLD = 6,
-	COLORS = {
-		ON = Color3.fromRGB(46, 204, 113),
-		OFF = Color3.fromRGB(30, 39, 46),
-		STROKE_ON = Color3.fromRGB(46, 204, 113),
-		STROKE_OFF = Color3.fromRGB(255, 255, 255),
-		TEXT = Color3.new(1, 1, 1),
-	},
-}
-
-local function createInstance(class, props, parent)
-	local inst = Instance.new(class)
-	for k, v in pairs(props) do
-		inst[k] = v
-	end
-	inst.Parent = parent
-	return inst
-end
-
-local ScreenGui = createInstance("ScreenGui", {
-	Name = "SlowHubSkill",
-	ResetOnSpawn = false,
-	ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
-	DisplayOrder = 999,
-}, PlayerGui)
-
-local Main = createInstance("Frame", {
-	Name = "MainFrame",
-	Size = UDim2.new(0, 160, 0, 52),
-	Position = UDim2.new(0.5, -80, 0.7, 0),
-	BackgroundColor3 = CONFIG.COLORS.OFF,
-	BorderSizePixel = 0,
-	Active = true,
-}, ScreenGui)
-
-createInstance("UICorner", { CornerRadius = UDim.new(0, 14) }, Main)
-
-local Stroke = createInstance("UIStroke", {
-	Color = CONFIG.COLORS.STROKE_OFF,
-	Thickness = 1.5,
-	Transparency = 0.6,
-}, Main)
-
-local Button = createInstance("TextButton", {
-	Size = UDim2.fromScale(1, 1),
-	BackgroundTransparency = 1,
-	Text = "SKILL: OFF",
-	TextColor3 = CONFIG.COLORS.TEXT,
-	TextScaled = true,
-	Font = Enum.Font.GothamBold,
-	AutoButtonColor = false,
-}, Main)
-
 local enabled = false
+
+-- ============================================
+-- GUI
+-- ============================================
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "NearestPlayerSkill"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+ScreenGui.Parent = PlayerGui
+
+local Main = Instance.new("Frame")
+Main.Name = "MainFrame"
+Main.Size = UDim2.new(0, 190, 0, 55)
+Main.Position = UDim2.new(0.5, -95, 0.8, 0)
+Main.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+Main.BorderSizePixel = 0
+Main.Active = true
+Main.Parent = ScreenGui
+
+local MainCorner = Instance.new("UICorner")
+MainCorner.CornerRadius = UDim.new(0, 14)
+MainCorner.Parent = Main
+
+local Stroke = Instance.new("UIStroke")
+Stroke.Color = Color3.fromRGB(55, 55, 55)
+Stroke.Thickness = 1
+Stroke.Parent = Main
+
+local Button = Instance.new("TextButton")
+Button.Name = "ToggleBtn"
+Button.Size = UDim2.fromScale(1, 1)
+Button.BackgroundTransparency = 1
+Button.Text = "OFF"
+Button.TextColor3 = Color3.new(1, 1, 1)
+Button.TextScaled = true
+Button.Font = Enum.Font.GothamBold
+Button.Parent = Main
+
+-- ============================================
+-- DRAG (Mobile + PC) — separado do clique
+-- ============================================
+local dragging = false
+local dragStart = nil
+local startPos = nil
 local wasDragged = false
+local DRAG_THRESHOLD = 6
 
-local function tweenProps(target, props)
-	TweenService:Create(target, TweenInfo.new(CONFIG.TWEEN_TIME, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), props):Play()
+-- Usamos o Frame (Main) como área de drag, não o botão
+Main.InputBegan:Connect(function(input)
+	if input.UserInputType ~= Enum.UserInputType.MouseButton1 
+	and input.UserInputType ~= Enum.UserInputType.Touch then
+		return
+	end
+	
+	dragging = true
+	wasDragged = false
+	dragStart = input.Position
+	startPos = Main.Position
+end)
+
+Main.InputEnded:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 
+	or input.UserInputType == Enum.UserInputType.Touch then
+		dragging = false
+	end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+	if not dragging then return end
+	if input.UserInputType ~= Enum.UserInputType.MouseMovement 
+	and input.UserInputType ~= Enum.UserInputType.Touch then
+		return
+	end
+
+	local delta = input.Position - dragStart
+	
+	-- Se ainda não confirmou drag e o mouse não se moveu o suficiente, ignora
+	if not wasDragged and delta.Magnitude < DRAG_THRESHOLD then
+		return
+	end
+	
+	wasDragged = true
+	Main.Position = UDim2.new(
+		startPos.X.Scale,
+		startPos.X.Offset + delta.X,
+		startPos.Y.Scale,
+		startPos.Y.Offset + delta.Y
+	)
+end)
+
+-- ============================================
+-- TOGGLE (só ativa se NÃO foi drag)
+-- ============================================
+local function toggle()
+	-- Se o frame foi arrastado, não alterna o estado
+	if wasDragged then return end
+	
+	enabled = not enabled
+
+	if enabled then
+		Button.Text = "ON"
+		Main.BackgroundColor3 = Color3.fromRGB(0, 170, 0)
+		Stroke.Color = Color3.fromRGB(0, 220, 0)
+	else
+		Button.Text = "OFF"
+		Main.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+		Stroke.Color = Color3.fromRGB(55, 55, 55)
+	end
 end
 
-local function setEnabled(state)
-	enabled = state
-	Button.Text = state and "SKILL: ON" or "SKILL: OFF"
-	tweenProps(Main, { BackgroundColor3 = state and CONFIG.COLORS.ON or CONFIG.COLORS.OFF })
-	tweenProps(Stroke, {
-		Color = state and CONFIG.COLORS.STROKE_ON or CONFIG.COLORS.STROKE_OFF,
-		Transparency = state and 0.2 or 0.6,
-	})
-end
+Button.MouseButton1Click:Connect(toggle)
 
+-- ============================================
+-- SKILL LOOP (igual ao antigo que funcionava)
+-- ============================================
 local function getNearestPlayer()
-	local char = LocalPlayer.Character
-	local root = char and char:FindFirstChild("HumanoidRootPart")
+	local character = LocalPlayer.Character
+	if not character then return nil end
+
+	local root = character:FindFirstChild("HumanoidRootPart")
 	if not root then return nil end
 
 	local nearest, shortest = nil, math.huge
 
 	for _, player in ipairs(Players:GetPlayers()) do
 		if player == LocalPlayer then continue end
-		local pChar = player.Character
-		if not pChar then continue end
-
-		local hrp = pChar:FindFirstChild("HumanoidRootPart")
-		local hum = pChar:FindFirstChildOfClass("Humanoid")
+		
+		local char = player.Character
+		if not char then continue end
+		
+		local hrp = char:FindFirstChild("HumanoidRootPart")
+		local hum = char:FindFirstChildOfClass("Humanoid")
 		if not hrp or not hum or hum.Health <= 0 then continue end
 
-		local dist = (root.Position - hrp.Position).Magnitude
-		if dist < shortest then
-			shortest = dist
+		local distance = (root.Position - hrp.Position).Magnitude
+		if distance < shortest then
+			shortest = distance
 			nearest = player
 		end
 	end
@@ -107,63 +152,15 @@ local function getNearestPlayer()
 	return nearest
 end
 
-local function makeDraggable(frame, handle)
-	local dragging = false
-	local dragStart, startPos
-
-	local DRAG_INPUTS = {
-		[Enum.UserInputType.MouseButton1] = true,
-		[Enum.UserInputType.Touch] = true,
-	}
-
-	local MOVE_INPUTS = {
-		[Enum.UserInputType.MouseMovement] = true,
-		[Enum.UserInputType.Touch] = true,
-	}
-
-	handle.InputBegan:Connect(function(input)
-		if not DRAG_INPUTS[input.UserInputType] then return end
-		dragging = true
-		wasDragged = false
-		dragStart = input.Position
-		startPos = frame.Position
-	end)
-
-	handle.InputEnded:Connect(function(input)
-		if DRAG_INPUTS[input.UserInputType] then
-			dragging = false
-		end
-	end)
-
-	UserInputService.InputChanged:Connect(function(input)
-		if not dragging or not MOVE_INPUTS[input.UserInputType] then return end
-
-		local delta = input.Position - dragStart
-		if not wasDragged and delta.Magnitude < CONFIG.DRAG_THRESHOLD then return end
-
-		wasDragged = true
-		frame.Position = UDim2.new(
-			startPos.X.Scale, startPos.X.Offset + delta.X,
-			startPos.Y.Scale, startPos.Y.Offset + delta.Y
-		)
-	end)
-end
-
-makeDraggable(Main, Button)
-
-Button.MouseButton1Click:Connect(function()
-	if wasDragged then return end
-	setEnabled(not enabled)
-end)
-
 task.spawn(function()
 	while true do
-		task.wait(CONFIG.LOOP_INTERVAL)
+		task.wait(0.1)
+		
 		if not enabled then continue end
 
-		local target = getNearestPlayer()
-		if target then
-			SkillEvent:FireServer(CONFIG.SKILL_NAME, target)
+		local nearestPlayer = getNearestPlayer()
+		if nearestPlayer then
+			SkillEvent:FireServer("Makima", nearestPlayer)
 		end
 	end
 end)
