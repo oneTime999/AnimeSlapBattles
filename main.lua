@@ -13,7 +13,7 @@ local enabled = false
 -- GUI MODERNA - CANTO SUPERIOR ESQUERDO
 -- ============================================
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "HubUI"
+ScreenGui.Name = "Cu"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 ScreenGui.Parent = PlayerGui
