@@ -31,7 +31,7 @@ local function createInstance(class, props, parent)
 end
 
 local ScreenGui = createInstance("ScreenGui", {
-	Name = "NearestPlayerSkill",
+	Name = "SlowHubSkill",
 	ResetOnSpawn = false,
 	ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
 	DisplayOrder = 999,
