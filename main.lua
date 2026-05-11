@@ -1,7 +1,7 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
-local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
 
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
@@ -47,16 +47,17 @@ Button.Font = Enum.Font.GothamBold
 Button.Parent = Main
 
 -- ============================================
--- DRAG (Mobile + PC) — separado do clique
+-- DRAG (Mobile + PC) — 100% funcional
 -- ============================================
 local dragging = false
+local wasDragged = false
 local dragStart = nil
 local startPos = nil
-local wasDragged = false
+local activeInput = nil
 local DRAG_THRESHOLD = 6
 
--- Usamos o Frame (Main) como área de drag, não o botão
-Main.InputBegan:Connect(function(input)
+-- InputBegan no BOTÃO (não no Frame) porque no mobile o touch é capturado pelo botão
+Button.InputBegan:Connect(function(input)
 	if input.UserInputType ~= Enum.UserInputType.MouseButton1 
 	and input.UserInputType ~= Enum.UserInputType.Touch then
 		return
@@ -66,43 +67,43 @@ Main.InputBegan:Connect(function(input)
 	wasDragged = false
 	dragStart = input.Position
 	startPos = Main.Position
+	activeInput = input
 end)
 
-Main.InputEnded:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.MouseButton1 
-	or input.UserInputType == Enum.UserInputType.Touch then
+-- InputEnded global (funciona mesmo se o dedo sair do botão)
+UserInputService.InputEnded:Connect(function(input)
+	if not dragging then return end
+	if input == activeInput then
 		dragging = false
+		activeInput = nil
 	end
 end)
 
+-- InputChanged global (captura movimento fora do botão também)
 UserInputService.InputChanged:Connect(function(input)
 	if not dragging then return end
-	if input.UserInputType ~= Enum.UserInputType.MouseMovement 
-	and input.UserInputType ~= Enum.UserInputType.Touch then
-		return
-	end
-
+	if input ~= activeInput then return end
+	
 	local delta = input.Position - dragStart
 	
-	-- Se ainda não confirmou drag e o mouse não se moveu o suficiente, ignora
-	if not wasDragged and delta.Magnitude < DRAG_THRESHOLD then
-		return
+	if not wasDragged and delta.Magnitude >= DRAG_THRESHOLD then
+		wasDragged = true
 	end
 	
-	wasDragged = true
-	Main.Position = UDim2.new(
-		startPos.X.Scale,
-		startPos.X.Offset + delta.X,
-		startPos.Y.Scale,
-		startPos.Y.Offset + delta.Y
-	)
+	if wasDragged then
+		Main.Position = UDim2.new(
+			startPos.X.Scale,
+			startPos.X.Offset + delta.X,
+			startPos.Y.Scale,
+			startPos.Y.Offset + delta.Y
+		)
+	end
 end)
 
 -- ============================================
--- TOGGLE (só ativa se NÃO foi drag)
+-- TOGGLE (Activated funciona em Mobile + PC)
 -- ============================================
 local function toggle()
-	-- Se o frame foi arrastado, não alterna o estado
 	if wasDragged then return end
 	
 	enabled = not enabled
@@ -118,7 +119,8 @@ local function toggle()
 	end
 end
 
-Button.MouseButton1Click:Connect(toggle)
+-- Activated dispara tanto em clique de mouse quanto em tap no celular
+Button.Activated:Connect(toggle)
 
 -- ============================================
 -- SKILL LOOP (igual ao antigo que funcionava)
