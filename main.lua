@@ -1,270 +1,169 @@
--- Services
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
-local RunService = game:GetService("RunService")
 
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+local SkillEvent = ReplicatedStorage:WaitForChild("SkillEvent")
 
--- Configuration
 local CONFIG = {
-	MaxTargetDistance = math.huge,
-	RespectTeams = false,
-	CheckForceField = true,
-	UpdateInterval = 0.15,
-	DragSmoothness = 0.25,
-	ToggleKey = nil, -- Optional: Enum.KeyCode.Q
-	Colors = {
-		On = Color3.fromRGB(46, 204, 113),
-		Off = Color3.fromRGB(44, 62, 80),
-		Stroke = Color3.fromRGB(255, 255, 255)
-	}
-}
-
--- State
-local State = {
-	Enabled = false,
-	Connections = {},
-	Drag = {
-		Active = false,
-		Input = nil,
-		StartPosition = nil,
-		DragStart = nil
+	SKILL_NAME = "Makima",
+	LOOP_INTERVAL = 0.2,
+	TWEEN_TIME = 0.25,
+	DRAG_THRESHOLD = 6,
+	COLORS = {
+		ON = Color3.fromRGB(46, 204, 113),
+		OFF = Color3.fromRGB(30, 39, 46),
+		STROKE_ON = Color3.fromRGB(46, 204, 113),
+		STROKE_OFF = Color3.fromRGB(255, 255, 255),
+		TEXT = Color3.new(1, 1, 1),
 	},
-	Character = nil,
-	Humanoid = nil,
-	RootPart = nil
 }
 
--- UI
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "NearestPlayerSkill"
-ScreenGui.ResetOnSpawn = false
-ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-ScreenGui.Parent = PlayerGui
-
-local MainFrame = Instance.new("Frame")
-MainFrame.Name = "MainFrame"
-MainFrame.Size = UDim2.new(0, 150, 0, 50)
-MainFrame.Position = UDim2.new(0.5, -75, 0.7, 0)
-MainFrame.BackgroundColor3 = CONFIG.Colors.Off
-MainFrame.BorderSizePixel = 0
-MainFrame.Active = true
-MainFrame.Parent = ScreenGui
-
-local Corner = Instance.new("UICorner")
-Corner.CornerRadius = UDim.new(0, 10)
-Corner.Parent = MainFrame
-
-local Stroke = Instance.new("UIStroke")
-Stroke.Color = CONFIG.Colors.Stroke
-Stroke.Thickness = 2
-Stroke.Transparency = 0.8
-Stroke.Parent = MainFrame
-
-local Button = Instance.new("TextButton")
-Button.Name = "ToggleButton"
-Button.Size = UDim2.fromScale(1, 1)
-Button.BackgroundTransparency = 1
-Button.Text = "SKILL: OFF"
-Button.TextColor3 = Color3.new(1, 1, 1)
-Button.TextScaled = true
-Button.Font = Enum.Font.GothamBold
-Button.Parent = MainFrame
-
--- Connection Manager
-local function Connect(signal, callback)
-	local conn = signal:Connect(callback)
-	table.insert(State.Connections, conn)
-	return conn
+local function createInstance(class, props, parent)
+	local inst = Instance.new(class)
+	for k, v in pairs(props) do
+		inst[k] = v
+	end
+	inst.Parent = parent
+	return inst
 end
 
--- Visuals
-local ActiveTween
+local ScreenGui = createInstance("ScreenGui", {
+	Name = "NearestPlayerSkill",
+	ResetOnSpawn = false,
+	ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+	DisplayOrder = 999,
+}, PlayerGui)
 
-local function UpdateToggleVisuals()
-	local isEnabled = State.Enabled
-	local targetColor = isEnabled and CONFIG.Colors.On or CONFIG.Colors.Off
-	local targetText = isEnabled and "SKILL: ON" or "SKILL: OFF"
+local Main = createInstance("Frame", {
+	Name = "MainFrame",
+	Size = UDim2.new(0, 160, 0, 52),
+	Position = UDim2.new(0.5, -80, 0.7, 0),
+	BackgroundColor3 = CONFIG.COLORS.OFF,
+	BorderSizePixel = 0,
+	Active = true,
+}, ScreenGui)
 
-	if ActiveTween then
-		ActiveTween:Cancel()
-	end
+createInstance("UICorner", { CornerRadius = UDim.new(0, 14) }, Main)
 
-	ActiveTween = TweenService:Create(MainFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quad), {
-		BackgroundColor3 = targetColor
+local Stroke = createInstance("UIStroke", {
+	Color = CONFIG.COLORS.STROKE_OFF,
+	Thickness = 1.5,
+	Transparency = 0.6,
+}, Main)
+
+local Button = createInstance("TextButton", {
+	Size = UDim2.fromScale(1, 1),
+	BackgroundTransparency = 1,
+	Text = "SKILL: OFF",
+	TextColor3 = CONFIG.COLORS.TEXT,
+	TextScaled = true,
+	Font = Enum.Font.GothamBold,
+	AutoButtonColor = false,
+}, Main)
+
+local enabled = false
+local wasDragged = false
+
+local function tweenProps(target, props)
+	TweenService:Create(target, TweenInfo.new(CONFIG.TWEEN_TIME, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), props):Play()
+end
+
+local function setEnabled(state)
+	enabled = state
+	Button.Text = state and "SKILL: ON" or "SKILL: OFF"
+	tweenProps(Main, { BackgroundColor3 = state and CONFIG.COLORS.ON or CONFIG.COLORS.OFF })
+	tweenProps(Stroke, {
+		Color = state and CONFIG.COLORS.STROKE_ON or CONFIG.COLORS.STROKE_OFF,
+		Transparency = state and 0.2 or 0.6,
 	})
-	ActiveTween:Play()
-
-	Button.Text = targetText
 end
 
--- Character Handler
-local function OnCharacterRemoving()
-	State.Character = nil
-	State.Humanoid = nil
-	State.RootPart = nil
-end
+local function getNearestPlayer()
+	local char = LocalPlayer.Character
+	local root = char and char:FindFirstChild("HumanoidRootPart")
+	if not root then return nil end
 
-local function OnCharacterAdded(character)
-	State.Character = character
-	State.RootPart = character:WaitForChild("HumanoidRootPart", 5)
-	State.Humanoid = character:FindFirstChildOfClass("Humanoid")
-
-	if State.Humanoid then
-		Connect(State.Humanoid.Died, function()
-			if not State.Enabled then return end
-			State.Enabled = false
-			UpdateToggleVisuals()
-		end)
-	end
-end
-
--- Draggable
-local function InitializeDraggable()
-	local dragEndConn
-
-	Connect(MainFrame.InputBegan, function(input)
-		if input.UserInputType ~= Enum.UserInputType.MouseButton1
-			and input.UserInputType ~= Enum.UserInputType.Touch then
-			return
-		end
-
-		State.Drag.Active = true
-		State.Drag.Input = input
-		State.Drag.StartPosition = MainFrame.Position
-		State.Drag.DragStart = input.Position
-
-		if dragEndConn then
-			dragEndConn:Disconnect()
-		end
-
-		dragEndConn = input.Changed:Connect(function()
-			if input.UserInputState == Enum.UserInputState.End then
-				State.Drag.Active = false
-				State.Drag.Input = nil
-				dragEndConn:Disconnect()
-				dragEndConn = nil
-			end
-		end)
-	end)
-
-	Connect(RunService.Heartbeat, function()
-		if not State.Drag.Active or not State.Drag.Input then return end
-
-		local delta = State.Drag.Input.Position - State.Drag.DragStart
-		local target = UDim2.new(
-			State.Drag.StartPosition.X.Scale,
-			State.Drag.StartPosition.X.Offset + delta.X,
-			State.Drag.StartPosition.Y.Scale,
-			State.Drag.StartPosition.Y.Offset + delta.Y
-		)
-
-		MainFrame.Position = MainFrame.Position:Lerp(target, CONFIG.DragSmoothness)
-	end)
-end
-
--- Targeting
-local function IsValidTarget(player)
-	if player == LocalPlayer then return false end
-	if CONFIG.RespectTeams and player.Team == LocalPlayer.Team then return false end
-
-	local character = player.Character
-	if not character then return false end
-
-	local humanoid = character:FindFirstChildOfClass("Humanoid")
-	if not humanoid or humanoid.Health <= 0 then return false end
-
-	local rootPart = character:FindFirstChild("HumanoidRootPart")
-	if not rootPart then return false end
-
-	if CONFIG.CheckForceField and character:FindFirstChildOfClass("ForceField") then
-		return false
-	end
-
-	return true, rootPart
-end
-
-local function GetNearestPlayer()
-	if not State.RootPart then return nil end
-
-	local nearest, shortest = nil, CONFIG.MaxDistance
-	local localPos = State.RootPart.Position
+	local nearest, shortest = nil, math.huge
 
 	for _, player in ipairs(Players:GetPlayers()) do
-		local valid, hrp = IsValidTarget(player)
-		if valid then
-			local distance = (localPos - hrp.Position).Magnitude
-			if distance < shortest then
-				shortest = distance
-				nearest = player
-			end
+		if player == LocalPlayer then continue end
+		local pChar = player.Character
+		if not pChar then continue end
+
+		local hrp = pChar:FindFirstChild("HumanoidRootPart")
+		local hum = pChar:FindFirstChildOfClass("Humanoid")
+		if not hrp or not hum or hum.Health <= 0 then continue end
+
+		local dist = (root.Position - hrp.Position).Magnitude
+		if dist < shortest then
+			shortest = dist
+			nearest = player
 		end
 	end
 
 	return nearest
 end
 
--- Toggle
-local SkillEvent = ReplicatedStorage:WaitForChild("SkillEvent", 10)
+local function makeDraggable(frame, handle)
+	local dragging = false
+	local dragStart, startPos
 
-local function Toggle()
-	State.Enabled = not State.Enabled
-	UpdateToggleVisuals()
-end
+	local DRAG_INPUTS = {
+		[Enum.UserInputType.MouseButton1] = true,
+		[Enum.UserInputType.Touch] = true,
+	}
 
-local lastClick = 0
-Connect(Button.MouseButton1Click, function()
-	local now = tick()
-	if now - lastClick < 0.15 then return end
-	lastClick = now
-	Toggle()
-end)
+	local MOVE_INPUTS = {
+		[Enum.UserInputType.MouseMovement] = true,
+		[Enum.UserInputType.Touch] = true,
+	}
 
-if CONFIG.ToggleKey then
-	Connect(UserInputService.InputBegan, function(input, gameProcessed)
-		if gameProcessed then return end
-		if input.KeyCode == CONFIG.ToggleKey then
-			Toggle()
+	handle.InputBegan:Connect(function(input)
+		if not DRAG_INPUTS[input.UserInputType] then return end
+		dragging = true
+		wasDragged = false
+		dragStart = input.Position
+		startPos = frame.Position
+	end)
+
+	handle.InputEnded:Connect(function(input)
+		if DRAG_INPUTS[input.UserInputType] then
+			dragging = false
 		end
+	end)
+
+	UserInputService.InputChanged:Connect(function(input)
+		if not dragging or not MOVE_INPUTS[input.UserInputType] then return end
+
+		local delta = input.Position - dragStart
+		if not wasDragged and delta.Magnitude < CONFIG.DRAG_THRESHOLD then return end
+
+		wasDragged = true
+		frame.Position = UDim2.new(
+			startPos.X.Scale, startPos.X.Offset + delta.X,
+			startPos.Y.Scale, startPos.Y.Offset + delta.Y
+		)
 	end)
 end
 
--- Execution Loop
-local accumulator = 0
+makeDraggable(Main, Button)
 
-Connect(RunService.Heartbeat, function(deltaTime)
-	accumulator += deltaTime
-	if accumulator < CONFIG.UpdateInterval then return end
-	accumulator = 0
-
-	if not State.Enabled then return end
-	if not SkillEvent then return end
-	if not State.RootPart or not State.Humanoid or State.Humanoid.Health <= 0 then return end
-
-	local target = GetNearestPlayer()
-	if target then
-		SkillEvent:FireServer("Makima", target)
-	end
+Button.MouseButton1Click:Connect(function()
+	if wasDragged then return end
+	setEnabled(not enabled)
 end)
 
--- Initialization
-if LocalPlayer.Character then
-	task.defer(OnCharacterAdded, LocalPlayer.Character)
-end
+task.spawn(function()
+	while true do
+		task.wait(CONFIG.LOOP_INTERVAL)
+		if not enabled then continue end
 
-Connect(LocalPlayer.CharacterAdded, OnCharacterAdded)
-Connect(LocalPlayer.CharacterRemoving, OnCharacterRemoving)
-
-InitializeDraggable()
-UpdateToggleVisuals()
-
--- Cleanup
-Connect(ScreenGui.Destroying, function()
-	for _, conn in ipairs(State.Connections) do
-		if conn then conn:Disconnect() end
+		local target = getNearestPlayer()
+		if target then
+			SkillEvent:FireServer(CONFIG.SKILL_NAME, target)
+		end
 	end
-	table.clear(State.Connections)
 end)
