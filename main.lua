@@ -304,10 +304,3 @@ task.spawn(function()
 		end
 	end
 end)
-
--- Limpa tudo se morrer
-LocalPlayer.CharacterRemoving:Connect(function()
-	clearTarget()
-	enabled = false
-	setVisual(false)
-end)
